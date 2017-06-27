@@ -11,7 +11,8 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>d62c48e8-ec40-4904-8e59-f33ef4dcde25</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>server.ts</StartupFile>
+    <StartupFile>
+    </StartupFile>
     <StartWebBrowser>True</StartWebBrowser>
     <SearchPath>
     </SearchPath>
@@ -32,9 +33,25 @@
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
   <ItemGroup>
-    <TypeScriptCompile Include="server.ts" />
+    <Content Include="dist\WebSocketManager.min.js.map" />
     <Content Include="package.json" />
-    <Content Include="README.md" />
+    <Content Include="tsconfig.json" />
+    <Content Include="tslint.json" />
+    <TypeScriptCompile Include="src\Connection.ts" />
+    <TypeScriptCompile Include="src\InvocationDescriptor.ts" />
+    <TypeScriptCompile Include="src\Message.ts" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="dist\" />
+    <Folder Include="src\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="dist\WebSocketManager.js" />
+    <Compile Include="dist\WebSocketManager.min.js" />
+    <Compile Include="src\Connection.js" />
+    <Compile Include="src\InvocationDescriptor.js" />
+    <Compile Include="src\Message.js" />
+    <Compile Include="webpack.config.js" />
   </ItemGroup>
   <!-- Do not delete the following Import Project.  While this appears to do nothing it is a marker for setting TypeScript properties before our import that depends on them. -->
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\TypeScript\Microsoft.TypeScript.targets" Condition="False" />

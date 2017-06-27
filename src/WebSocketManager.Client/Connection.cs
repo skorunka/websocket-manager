@@ -1,121 +1,121 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net.WebSockets;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
-
-using WebSocketManager.Common;
-
-namespace WebSocketManager.Client
+﻿namespace WebSocketManager.Client
 {
-    public class Connection
-    {
-        public string ConnectionId { get; set; }
+	using System;
+	using System.Collections.Generic;
+	using System.IO;
+	using System.Net.WebSockets;
+	using System.Text;
+	using System.Threading;
+	using System.Threading.Tasks;
+	using Common;
+	using Newtonsoft.Json;
+	using Newtonsoft.Json.Serialization;
 
-        private ClientWebSocket _clientWebSocket { get; set; }
-        private JsonSerializerSettings _jsonSerializerSettings = new JsonSerializerSettings()
-        {
-            ContractResolver = new CamelCasePropertyNamesContractResolver()
-        };
-        private Dictionary<string, InvocationHandler> _handlers = new Dictionary<string, InvocationHandler>();
+	public class Connection
+	{
+		private readonly Dictionary<string, InvocationHandler> _handlers = new Dictionary<string, InvocationHandler>();
 
-        public Connection()
-        {
-            _clientWebSocket = new ClientWebSocket();
-        }
+		private readonly JsonSerializerSettings _jsonSerializerSettings = new JsonSerializerSettings
+		{
+			ContractResolver = new CamelCasePropertyNamesContractResolver()
+		};
 
-        public async Task StartConnectionAsync(string uri)
-        {
-            await _clientWebSocket.ConnectAsync(new Uri(uri), CancellationToken.None).ConfigureAwait(false);
+		public Connection()
+		{
+			this._clientWebSocket = new ClientWebSocket();
+		}
 
-            await Receive(_clientWebSocket, (message) =>
-            {
-                if (message.MessageType == MessageType.ConnectionEvent)
-                {
-                    this.ConnectionId = message.Data;
-                }
+		public string ConnectionId { get; set; }
 
-                else if (message.MessageType == MessageType.ClientMethodInvocation)
-                {
-                    var invocationDescriptor = JsonConvert.DeserializeObject<InvocationDescriptor>(message.Data, _jsonSerializerSettings);
-                    Invoke(invocationDescriptor);
-                }
-            });
+		private ClientWebSocket _clientWebSocket { get; }
 
-        }
+		public async Task StartConnectionAsync(string uri)
+		{
+			await this._clientWebSocket.ConnectAsync(new Uri(uri), CancellationToken.None).ConfigureAwait(false);
 
-        public void On(string methodName, Action<object[]> handler)
-        {
-            var invocationHandler = new InvocationHandler(handler, new Type[] { });
-            _handlers.Add(methodName, invocationHandler);
-        }
+			await this.Receive(this._clientWebSocket,
+								message =>
+								{
+									if (message.MessageType == MessageType.ConnectionEvent)
+									{
+										this.ConnectionId = message.Data;
+									}
 
-        private void Invoke(InvocationDescriptor invocationDescriptor)
-        {
-            var invocationHandler = _handlers[invocationDescriptor.MethodName];
-            if (invocationHandler != null)
-                invocationHandler.Handler(invocationDescriptor.Arguments);
-        }
+									else if (message.MessageType == MessageType.ClientMethodInvocation)
+									{
+										var invocationDescriptor = JsonConvert.DeserializeObject<InvocationDescriptor>(message.Data, this._jsonSerializerSettings);
+										this.Invoke(invocationDescriptor);
+									}
+								});
+		}
 
-        public async Task StopConnectionAsync()
-        {
-            await _clientWebSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None).ConfigureAwait(false);
-        }
+		public void On(string methodName, Action<object[]> handler)
+		{
+			var invocationHandler = new InvocationHandler(handler, new Type[] { });
+			this._handlers.Add(methodName, invocationHandler);
+		}
 
-        private async Task Receive(ClientWebSocket clientWebSocket, Action<Message> handleMessage)
-        {
+		private void Invoke(InvocationDescriptor invocationDescriptor)
+		{
+			var invocationHandler = this._handlers[invocationDescriptor.MethodName];
+			if (invocationHandler != null)
+			{
+				invocationHandler.Handler(invocationDescriptor.Arguments);
+			}
+		}
 
-            while (_clientWebSocket.State == WebSocketState.Open)
-            {
-                ArraySegment<Byte> buffer = new ArraySegment<byte>(new Byte[1024 * 4]);
-                string serializedMessage = null;
-                WebSocketReceiveResult result = null;
-                using (var ms = new MemoryStream())
-                {
-                    do
-                    {
-                        result = await clientWebSocket.ReceiveAsync(buffer, CancellationToken.None).ConfigureAwait(false);
-                        ms.Write(buffer.Array, buffer.Offset, result.Count);
-                    }
-                    while (!result.EndOfMessage);
+		public async Task StopConnectionAsync()
+		{
+			await this._clientWebSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None).ConfigureAwait(false);
+		}
 
-                    ms.Seek(0, SeekOrigin.Begin);
+		private async Task Receive(ClientWebSocket clientWebSocket, Action<Message> handleMessage)
+		{
+			while (this._clientWebSocket.State == WebSocketState.Open)
+			{
+				var buffer = new ArraySegment<byte>(new byte[1024 * 4]);
+				string serializedMessage = null;
+				WebSocketReceiveResult result = null;
+				using (var ms = new MemoryStream())
+				{
+					do
+					{
+						result = await clientWebSocket.ReceiveAsync(buffer, CancellationToken.None).ConfigureAwait(false);
+						ms.Write(buffer.Array, buffer.Offset, result.Count);
+					} while (!result.EndOfMessage);
 
-                    using (var reader = new StreamReader(ms, Encoding.UTF8))
-                    {
-                        serializedMessage = await reader.ReadToEndAsync().ConfigureAwait(false);
-                    }
+					ms.Seek(0, SeekOrigin.Begin);
 
-                }
+					using (var reader = new StreamReader(ms, Encoding.UTF8))
+					{
+						serializedMessage = await reader.ReadToEndAsync().ConfigureAwait(false);
+					}
+				}
 
-                if (result.MessageType == WebSocketMessageType.Text)
-                {
-                    var message = JsonConvert.DeserializeObject<Message>(serializedMessage);
-                    handleMessage(message);
-                }
+				if (result.MessageType == WebSocketMessageType.Text)
+				{
+					var message = JsonConvert.DeserializeObject<Message>(serializedMessage);
+					handleMessage(message);
+				}
 
-                else if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    await _clientWebSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None).ConfigureAwait(false);
-                    break;
-                }
-            }
-        }
-    }
+				else if (result.MessageType == WebSocketMessageType.Close)
+				{
+					await this._clientWebSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None).ConfigureAwait(false);
+					break;
+				}
+			}
+		}
+	}
 
-    public class InvocationHandler
-    {
-        public Action<object[]> Handler { get; set; }
-        public Type[] ParameterTypes { get; set; }
+	public class InvocationHandler
+	{
+		public InvocationHandler(Action<object[]> handler, Type[] parameterTypes)
+		{
+			this.Handler = handler;
+			this.ParameterTypes = parameterTypes;
+		}
 
-        public InvocationHandler(Action<object[]> handler, Type[] parameterTypes)
-        {
-            Handler = handler;
-            ParameterTypes = parameterTypes;
-        }
-    }
+		public Action<object[]> Handler { get; set; }
+		public Type[] ParameterTypes { get; set; }
+	}
 }

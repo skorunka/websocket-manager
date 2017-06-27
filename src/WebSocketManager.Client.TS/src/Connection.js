@@ -1,4 +1,5 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 var InvocationDescriptor_1 = require("./InvocationDescriptor");
 var Message_1 = require("./Message");
 var Connection = (function () {
