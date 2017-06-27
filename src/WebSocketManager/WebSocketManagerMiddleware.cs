@@ -12,8 +12,7 @@
 	{
 		private readonly RequestDelegate _next;
 
-		public WebSocketManagerMiddleware(RequestDelegate next,
-										WebSocketHandler webSocketHandler)
+		public WebSocketManagerMiddleware(RequestDelegate next, WebSocketHandler webSocketHandler)
 		{
 			this._next = next;
 			this._webSocketHandler = webSocketHandler;

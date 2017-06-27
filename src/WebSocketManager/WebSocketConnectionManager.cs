@@ -35,9 +35,8 @@
 		{
 			this._sockets.TryRemove(id, out var socket);
 
-			await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,
-									"Closed by the WebSocketManager",
-									CancellationToken.None).ConfigureAwait(false);
+			await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by the WebSocketManager", CancellationToken.None).ConfigureAwait(false);
+
 		}
 
 		private string CreateConnectionId()
