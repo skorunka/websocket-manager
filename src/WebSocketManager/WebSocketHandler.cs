@@ -1,12 +1,14 @@
 ﻿namespace WebSocketManager
 {
 	using System;
+	using System.Collections.Generic;
+	using System.Linq;
 	using System.Net.WebSockets;
 	using System.Reflection;
-	using System.Text;
 	using System.Threading;
 	using System.Threading.Tasks;
 	using Common;
+	using Microsoft.AspNetCore.Http;
 	using Newtonsoft.Json;
 	using Newtonsoft.Json.Serialization;
 
@@ -17,16 +19,23 @@
 			ContractResolver = new CamelCasePropertyNamesContractResolver()
 		};
 
-		public WebSocketHandler(WebSocketConnectionManager webSocketConnectionManager)
+		//TODO: CocurrentDictiopnary
+		private readonly Dictionary<string, MethodInfo> _methods = new Dictionary<string, MethodInfo>();
+
+		#region ctors
+
+		protected WebSocketHandler(WebSocketConnectionManager webSocketConnectionManager)
 		{
 			this.WebSocketConnectionManager = webSocketConnectionManager;
 		}
 
+		#endregion
+
 		protected WebSocketConnectionManager WebSocketConnectionManager { get; set; }
 
-		public virtual async Task OnConnected(WebSocket socket)
+		public virtual async Task OnConnected(WebSocket socket, HttpContext context, string socketId = null)
 		{
-			this.WebSocketConnectionManager.AddSocket(socket);
+			this.WebSocketConnectionManager.AddSocket(socket, context, socketId);
 
 			await this.SendMessageAsync(socket,
 										new Message
@@ -48,63 +57,49 @@
 				return;
 			}
 
-			var serializedMessage = JsonConvert.SerializeObject(message, this._jsonSerializerSettings);
-			await socket.SendAsync(new ArraySegment<byte>(Encoding.ASCII.GetBytes(serializedMessage),
-														0,
-														serializedMessage.Length),
-									WebSocketMessageType.Text,
-									true,
-									CancellationToken.None).ConfigureAwait(false);
+			await socket.SendAsync(message.Serialized, WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
 		}
 
-		public async Task SendMessageAsync(string socketId, Message message)
+		public async Task SendMessageAsync(string connectionId, Message message)
 		{
-			await this.SendMessageAsync(this.WebSocketConnectionManager.GetSocketById(socketId), message).ConfigureAwait(false);
+			await this.SendMessageAsync(this.WebSocketConnectionManager.GetSocketById(connectionId).Socket, message).ConfigureAwait(false);
 		}
 
-		public async Task SendMessageToAllAsync(Message message)
+		public async Task SendMessageToAllAsync(Message message, Func<WebSocketConnection, bool> filter = null)
 		{
-			foreach (var pair in this.WebSocketConnectionManager.GetAll())
+			var connections = this.WebSocketConnectionManager.Connections();
+			if (filter != null)
 			{
-				if (pair.Value.State == WebSocketState.Open)
-				{
-					await this.SendMessageAsync(pair.Value, message).ConfigureAwait(false);
-				}
+				connections = connections.Where(filter);
 			}
+
+			// Get all connections to send to and send all at once, without blocking
+			var allTasks = connections.Select(x => this.SendMessageAsync(x.Socket, message));
+			await Task.WhenAll(allTasks).ConfigureAwait(false);
 		}
 
 		public async Task InvokeClientMethodAsync(string socketId, string methodName, object[] arguments)
 		{
-			var message = new Message
-			{
-				MessageType = MessageType.ClientMethodInvocation,
-				Data = JsonConvert.SerializeObject(new InvocationDescriptor
-													{
-														MethodName = methodName,
-														Arguments = arguments
-													},
-													this._jsonSerializerSettings)
-			};
-
+			var message = this.GetInvocationMessage(methodName, arguments);
 			await this.SendMessageAsync(socketId, message).ConfigureAwait(false);
+		}
+
+		public async Task InvokeClientMethodToAllAsync(string methodName, Func<WebSocketConnection, bool> filter, params object[] arguments)
+		{
+			var message = this.GetInvocationMessage(methodName, arguments);
+			await this.SendMessageToAllAsync(message, filter);
 		}
 
 		public async Task InvokeClientMethodToAllAsync(string methodName, params object[] arguments)
 		{
-			foreach (var pair in this.WebSocketConnectionManager.GetAll())
-			{
-				if (pair.Value.State == WebSocketState.Open)
-				{
-					await this.InvokeClientMethodAsync(pair.Key, methodName, arguments).ConfigureAwait(false);
-				}
-			}
+			await this.InvokeClientMethodToAllAsync(methodName, null, arguments);
 		}
 
 		public async Task ReceiveAsync(WebSocket socket, WebSocketReceiveResult result, string serializedInvocationDescriptor)
 		{
 			var invocationDescriptor = JsonConvert.DeserializeObject<InvocationDescriptor>(serializedInvocationDescriptor);
 
-			var method = this.GetType().GetMethod(invocationDescriptor.MethodName);
+			var method = this.GetMethod(invocationDescriptor.MethodName);
 
 			if (method == null)
 			{
@@ -139,6 +134,45 @@
 												MessageType = MessageType.Text,
 												Data = $"The {invocationDescriptor.MethodName} method takes different arguments!"
 											}).ConfigureAwait(false);
+			}
+		}
+
+		private Message GetInvocationMessage(string methodName, object[] arguments)
+		{
+			return new Message
+			{
+				MessageType = MessageType.ClientMethodInvocation,
+				Data = JsonConvert.SerializeObject(new InvocationDescriptor
+				{
+					MethodName = methodName,
+					Arguments = arguments
+				},
+				this._jsonSerializerSettings)
+			};
+		}
+
+		private MethodInfo GetMethod(string methodName)
+		{
+			if (this._methods.TryGetValue(methodName, out var method))
+			{
+				return method;
+			}
+
+			lock (this)
+			{
+				if (this._methods.TryGetValue(methodName, out method))
+				{
+					return method;
+				}
+
+				// Todo: make sure this method can be invoked
+				method = this.GetType().GetMethod(methodName);
+				if ((method != null) && !this._methods.ContainsKey(methodName))
+				{
+					this._methods.Add(methodName, method);
+				}
+
+				return method;
 			}
 		}
 	}

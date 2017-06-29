@@ -2,44 +2,54 @@
 {
 	using System;
 	using System.Collections.Concurrent;
+	using System.Collections.Generic;
 	using System.Linq;
 	using System.Net.WebSockets;
 	using System.Threading;
 	using System.Threading.Tasks;
+	using Microsoft.AspNetCore.Http;
 
 	public class WebSocketConnectionManager
 	{
-		private readonly ConcurrentDictionary<string, WebSocket> _sockets = new ConcurrentDictionary<string, WebSocket>();
+		private readonly ConcurrentDictionary<string, WebSocketConnection> _sockets = new ConcurrentDictionary<string, WebSocketConnection>();
 
-		public WebSocket GetSocketById(string id)
+		public WebSocketConnection GetSocketById(string id)
 		{
 			return this._sockets.FirstOrDefault(p => p.Key == id).Value;
 		}
 
-		public ConcurrentDictionary<string, WebSocket> GetAll()
+		public ConcurrentDictionary<string, WebSocketConnection> GetAll()
 		{
 			return this._sockets;
 		}
 
-		public string GetId(WebSocket socket)
+		public IEnumerable<WebSocketConnection> Connections()
 		{
-			return this._sockets.FirstOrDefault(p => p.Value == socket).Key;
+			return this._sockets.Values.Where(x => x.Socket.State == WebSocketState.Open);
 		}
 
-		public void AddSocket(WebSocket socket)
+		public string GetId(WebSocket socket)
 		{
-			this._sockets.TryAdd(this.CreateConnectionId(), socket);
+			return this._sockets.Values.FirstOrDefault(p => p.Socket == socket)?.Id;
+		}
+
+		public void AddSocket(WebSocket socket, HttpContext context, string socketId = null)
+		{
+			var id = socketId ?? CreateConnectionId();
+			this._sockets.TryAdd(id, new WebSocketConnection { Id = id, Socket = socket, Query = context.Request.Query });
 		}
 
 		public async Task RemoveSocket(string id)
 		{
-			this._sockets.TryRemove(id, out var socket);
-
-			await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by the WebSocketManager", CancellationToken.None).ConfigureAwait(false);
-
+			if (this._sockets.TryRemove(id, out var connection))
+			{
+				await connection.Socket.CloseAsync(WebSocketCloseStatus.NormalClosure,
+													"Closed by the WebSocketManager",
+													CancellationToken.None).ConfigureAwait(false);
+			}
 		}
 
-		private string CreateConnectionId()
+		private static string CreateConnectionId()
 		{
 			return Guid.NewGuid().ToString();
 		}
