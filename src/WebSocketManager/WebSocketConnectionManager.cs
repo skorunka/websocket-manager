@@ -15,12 +15,8 @@
 
 		public WebSocketConnection GetSocketById(string id)
 		{
-			return this._sockets.FirstOrDefault(p => p.Key == id).Value;
-		}
-
-		public ConcurrentDictionary<string, WebSocketConnection> GetAll()
-		{
-			return this._sockets;
+			this._sockets.TryGetValue(id, out var ws);
+			return ws;
 		}
 
 		public IEnumerable<WebSocketConnection> Connections()
@@ -33,23 +29,23 @@
 			return this._sockets.Values.FirstOrDefault(p => p.Socket == socket)?.Id;
 		}
 
-		public void AddSocket(WebSocket socket, HttpContext context, string socketId = null)
+		public void AddSocket(WebSocket socket, HttpContext context, string socketConnectionId = null)
 		{
-			var id = socketId ?? CreateConnectionId();
+			var id = socketConnectionId ?? CreateSocketConnectionId();
 			this._sockets.TryAdd(id, new WebSocketConnection { Id = id, Socket = socket, Query = context.Request.Query });
 		}
 
 		public async Task RemoveSocket(string id)
 		{
-			if (this._sockets.TryRemove(id, out var connection))
+			if (this._sockets.TryRemove(id, out var socketConnection))
 			{
-				await connection.Socket.CloseAsync(WebSocketCloseStatus.NormalClosure,
-													"Closed by the WebSocketManager",
-													CancellationToken.None).ConfigureAwait(false);
+				await socketConnection.Socket
+					.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by the WebSocketManager", CancellationToken.None)
+					.ConfigureAwait(false);
 			}
 		}
 
-		private static string CreateConnectionId()
+		private static string CreateSocketConnectionId()
 		{
 			return Guid.NewGuid().ToString();
 		}

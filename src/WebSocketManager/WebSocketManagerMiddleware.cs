@@ -7,13 +7,21 @@
 	using System.Threading;
 	using System.Threading.Tasks;
 	using Microsoft.AspNetCore.Http;
+	using Microsoft.Extensions.Logging;
 
 	public class WebSocketManagerMiddleware
 	{
-		public WebSocketManagerMiddleware(RequestDelegate next, WebSocketHandler webSocketHandler)
+		private readonly ILogger<WebSocketManagerMiddleware> _logger;
+
+		#region ctors
+
+		public WebSocketManagerMiddleware(RequestDelegate next, WebSocketHandler webSocketHandler, ILogger<WebSocketManagerMiddleware> logger)
 		{
 			this._webSocketHandler = webSocketHandler;
+			this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		}
+
+		#endregion
 
 		private WebSocketHandler _webSocketHandler { get; }
 
@@ -42,9 +50,10 @@
 									{
 										await this._webSocketHandler.OnDisconnected(socket);
 									}
-									catch (WebSocketException)
+									catch (WebSocketException e)
 									{
-										throw; //let's not swallow any exception for now
+										this._logger.LogError(e.Message, e);
+										throw;
 									}
 									break;
 								default:

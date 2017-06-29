@@ -1,8 +1,7 @@
 import { InvocationDescriptor } from './InvocationDescriptor'
 import { Message, MessageType } from './Message'
 
-export class Connection
-{
+export class Connection {
 	public url: string;
 	public connectionId: string;
 	public enableLogging: boolean = false;
@@ -13,25 +12,21 @@ export class Connection
 	public clientMethods: { [s: string]: Function; } = {};
 	public connectionMethods: { [s: string]: Function; } = {};
 
-	constructor(url: string, enableLogging: boolean=false) {
+	constructor(url: string, enableLogging: boolean = false) {
 		this.url = url;
 
 		this.enableLogging = enableLogging;
 
 		this.connectionMethods['onConnected'] = () => {
-			if (this.enableLogging) {
-				console.log('Connected! connectionId: ' + this.connectionId);
-			}
+			this.log(`Connected! connectionId: ${this.connectionId}`);
 		};
+
 		this.connectionMethods['onDisconnected'] = () => {
-			if (this.enableLogging) {
-				console.log('Connection closed from: ' + this.url);
-			}
+			this.log(`Connection closed from: ${this.url}`);
 		};
+
 		this.connectionMethods['onOpen'] = (socketOpenedEvent: any) => {
-			if (this.enableLogging) {
-				console.log('WebSockets connection opened!');
-			}
+			this.log('WebSockets connection opened!');
 		};
 	}
 
@@ -45,15 +40,13 @@ export class Connection
 		this.socket.onmessage = (event: MessageEvent) => {
 			this.message = JSON.parse(event.data);
 
-			if (this.message.messageType == MessageType.Text) {
-				if (this.enableLogging) {
-					console.log('Text message received. Message: ' + this.message.data);
-				}
-			} else if (this.message.messageType == MessageType.MethodInvocation) {
-				let invocationDescriptor: InvocationDescriptor = JSON.parse(this.message.data);
+			if (this.message.messageType === MessageType.Text) {
+				this.log(`Text message received. Message: ${this.message.data}`);
+			} else if (this.message.messageType === MessageType.MethodInvocation) {
+				const invocationDescriptor: InvocationDescriptor = JSON.parse(this.message.data);
 
 				this.clientMethods[invocationDescriptor.methodName].apply(this, invocationDescriptor.arguments);
-			} else if (this.message.messageType == MessageType.ConnectionEvent) {
+			} else if (this.message.messageType === MessageType.ConnectionEvent) {
 				this.connectionId = this.message.data;
 				this.connectionMethods['onConnected'].apply(this);
 			}
@@ -62,19 +55,21 @@ export class Connection
 			this.connectionMethods['onDisconnected'].apply(this);
 		};
 		this.socket.onerror = (event: ErrorEvent) => {
-			if (this.enableLogging) {
-				console.log('Error data: ' + event.error);
-			}
+			this.log(`Error data: ${event.error}`);
 		};
 	}
 
 	public invoke(methodName: string, ...args: any[]) {
-		let invocationDescriptor = new InvocationDescriptor(methodName, args);
+		const invocationDescriptor = new InvocationDescriptor(methodName, args);
 
-		if (this.enableLogging) {
-			console.log(invocationDescriptor);
-		}
+		this.log(invocationDescriptor);
 
 		this.socket.send(JSON.stringify(invocationDescriptor));
+	}
+
+	private log(message: any): void {
+		if (this.enableLogging) {
+			console.log(message);
+		}
 	}
 }
